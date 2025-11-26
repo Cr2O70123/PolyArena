@@ -14,6 +14,9 @@ interface GameStore {
   // Inputs (Joystick values)
   joystickMove: { x: number; y: number };
   joystickAim: { x: number; y: number; active: boolean };
+  
+  // Actions to bridge UI and 3D
+  shootTimestamp: number;
 
   // Actions
   setPhase: (phase: GamePhase) => void;
@@ -23,6 +26,7 @@ interface GameStore {
   removePlayer: (id: string) => void;
   setJoystickMove: (x: number, y: number) => void;
   setJoystickAim: (x: number, y: number, active: boolean) => void;
+  triggerShoot: () => void;
   resetGame: () => void;
 }
 
@@ -33,6 +37,7 @@ export const useGameStore = create<GameStore>((set) => ({
   players: {},
   joystickMove: { x: 0, y: 0 },
   joystickAim: { x: 0, y: 0, active: false },
+  shootTimestamp: 0,
 
   setPhase: (phase) => set({ phase }),
   setNickname: (nickname) => set({ nickname }),
@@ -47,6 +52,7 @@ export const useGameStore = create<GameStore>((set) => ({
            ...state.players,
            [id]: {
              id,
+             nickname: 'Unknown',
              position: { x: 0, y: 1, z: 0 },
              rotation: 0,
              hp: MAX_HP,
@@ -74,9 +80,13 @@ export const useGameStore = create<GameStore>((set) => ({
 
   setJoystickMove: (x, y) => set({ joystickMove: { x, y } }),
   setJoystickAim: (x, y, active) => set({ joystickAim: { x, y, active } }),
+  triggerShoot: () => set({ shootTimestamp: Date.now() }),
 
   resetGame: () => set((state) => ({
     players: {},
-    phase: 'LOBBY'
+    phase: 'LOBBY',
+    myId: null,
+    joystickMove: { x: 0, y: 0 },
+    joystickAim: { x: 0, y: 0, active: false }
   })),
 }));

@@ -6,6 +6,7 @@ export interface Vector3 {
 
 export interface PlayerState {
   id: string;
+  nickname: string;
   position: Vector3;
   rotation: number; // Y-axis rotation in radians
   hp: number;
@@ -33,3 +34,24 @@ export type NetMessage =
   | { type: 'hit'; targetId: string; damage: number; sourceId: string }
   | { type: 'kill'; killerId: string; victimId: string }
   | { type: 'sync'; players: Record<string, PlayerState> };
+
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      group: any;
+      mesh: any;
+      capsuleGeometry: any;
+      meshStandardMaterial: any;
+      boxGeometry: any;
+      planeGeometry: any;
+      meshBasicMaterial: any;
+      sphereGeometry: any;
+      gridHelper: any;
+      ambientLight: any;
+      directionalLight: any;
+      hemisphereLight: any;
+      orthographicCamera: any;
+      color: any;
+    }
+  }
+}
