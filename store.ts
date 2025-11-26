@@ -11,9 +11,9 @@ interface GameStore {
   // Players
   players: Record<string, PlayerState>;
   
-  // Inputs (Joystick values)
+  // Inputs
   joystickMove: { x: number; y: number };
-  joystickAim: { x: number; y: number; active: boolean };
+  cameraAngle: number; // Horizontal rotation angle in radians
   
   // Actions to bridge UI and 3D
   shootTimestamp: number;
@@ -25,7 +25,7 @@ interface GameStore {
   updatePlayer: (id: string, data: Partial<PlayerState>) => void;
   removePlayer: (id: string) => void;
   setJoystickMove: (x: number, y: number) => void;
-  setJoystickAim: (x: number, y: number, active: boolean) => void;
+  setCameraAngle: (angle: number) => void; // New action
   triggerShoot: () => void;
   resetGame: () => void;
 }
@@ -36,7 +36,7 @@ export const useGameStore = create<GameStore>((set) => ({
   nickname: '',
   players: {},
   joystickMove: { x: 0, y: 0 },
-  joystickAim: { x: 0, y: 0, active: false },
+  cameraAngle: 0,
   shootTimestamp: 0,
 
   setPhase: (phase) => set({ phase }),
@@ -79,7 +79,7 @@ export const useGameStore = create<GameStore>((set) => ({
   }),
 
   setJoystickMove: (x, y) => set({ joystickMove: { x, y } }),
-  setJoystickAim: (x, y, active) => set({ joystickAim: { x, y, active } }),
+  setCameraAngle: (angle) => set({ cameraAngle: angle }),
   triggerShoot: () => set({ shootTimestamp: Date.now() }),
 
   resetGame: () => set((state) => ({
@@ -87,6 +87,6 @@ export const useGameStore = create<GameStore>((set) => ({
     phase: 'LOBBY',
     myId: null,
     joystickMove: { x: 0, y: 0 },
-    joystickAim: { x: 0, y: 0, active: false }
+    cameraAngle: 0,
   })),
 }));

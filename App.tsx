@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useGameStore } from './store';
 import GameScene from './components/GameScene';
@@ -8,13 +8,14 @@ import { PlayerState } from './types';
 const App: React.FC = () => {
   const { 
     phase, nickname, setNickname, setPhase, setMyId, updatePlayer,
-    setJoystickMove, setJoystickAim, triggerShoot, 
-    resetGame, players, myId
+    setJoystickMove, setCameraAngle, triggerShoot, 
+    resetGame, players, myId, cameraAngle
   } = useGameStore();
   
   const [localName, setLocalName] = useState('');
+  const touchLookRef = useRef<{ startX: number, startAngle: number } | null>(null);
 
-  // Setup Desktop Controls
+  // Desktop Controls (Keyboard + Mouse Look)
   useEffect(() => {
     const keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false };
     
@@ -26,7 +27,7 @@ const App: React.FC = () => {
       if (keys.a || keys.ArrowLeft) x -= 1;
       if (keys.d || keys.ArrowRight) x += 1;
       
-      // Normalize if diagonal to avoid faster speed
+      // Normalize if diagonal
       if (x !== 0 || y !== 0) {
         const length = Math.sqrt(x*x + y*y);
         x /= length;
@@ -49,24 +50,26 @@ const App: React.FC = () => {
       }
     };
 
+    // Mouse Look (Pointer Lock)
     const handleMouseMove = (e: MouseEvent) => {
-      // Simple mouse aiming: calculate vector from center of screen
-      if (phase === 'PLAYING') {
-         const centerX = window.innerWidth / 2;
-         const centerY = window.innerHeight / 2;
-         const dx = e.clientX - centerX;
-         const dy = e.clientY - centerY;
-         
-         // Normalize
-         const maxVal = Math.max(Math.abs(dx), Math.abs(dy));
-         if (maxVal > 0) {
-            setJoystickAim(dx / maxVal, -dy / maxVal, true); // Invert Y for logic
-         }
+      if (phase === 'PLAYING' && document.pointerLockElement === document.body) {
+         // Adjust sensitivity as needed
+         const sensitivity = 0.005;
+         // Subtracting because dragging left (negative) should rotate camera left (reduce angle)
+         setCameraAngle(useGameStore.getState().cameraAngle - e.movementX * sensitivity);
       }
     };
     
     const handleMouseDown = (e: MouseEvent) => {
-        if(phase === 'PLAYING') triggerShoot();
+        if (phase === 'PLAYING') {
+           // Request pointer lock on click if not locked
+           if (document.pointerLockElement !== document.body) {
+              document.body.requestPointerLock();
+           } else {
+              // If locked, left click shoots
+              if (e.button === 0) triggerShoot();
+           }
+        }
     }
 
     window.addEventListener('keydown', handleKeyDown);
@@ -82,12 +85,36 @@ const App: React.FC = () => {
     };
   }, [phase]);
 
+  // Touch Look Logic (Right side of screen)
+  const handleTouchLookStart = (e: React.TouchEvent) => {
+     const touch = e.changedTouches[0];
+     // Only if touch is on the right half of the screen (approx)
+     touchLookRef.current = {
+         startX: touch.clientX,
+         startAngle: useGameStore.getState().cameraAngle
+     };
+  };
+
+  const handleTouchLookMove = (e: React.TouchEvent) => {
+     if (!touchLookRef.current) return;
+     const touch = e.changedTouches[0];
+     const deltaX = touch.clientX - touchLookRef.current.startX;
+     
+     // Sensitivity for touch
+     const sensitivity = 0.01; 
+     setCameraAngle(touchLookRef.current.startAngle - deltaX * sensitivity);
+  };
+
+  const handleTouchLookEnd = () => {
+     touchLookRef.current = null;
+  };
+
   const handleStart = () => {
     if (!localName.trim()) return;
     const id = uuidv4();
     setNickname(localName);
     setMyId(id);
-    // Optimistic spawn: Add self immediately so we don't wait for server
+    // Optimistic spawn
     updatePlayer(id, {
         id,
         nickname: localName,
@@ -96,7 +123,7 @@ const App: React.FC = () => {
         hp: 100,
         isDead: false,
         score: 0,
-        color: '#3b82f6', // Local player blue
+        color: '#3b82f6',
         team: 'blue'
     });
     setPhase('PLAYING');
@@ -116,7 +143,13 @@ const App: React.FC = () => {
   return (
     <div className="relative w-full h-screen bg-slate-900 overflow-hidden select-none font-sans text-white">
       {/* 3D Scene Layer */}
-      <div className="absolute inset-0 z-0">
+      <div className="absolute inset-0 z-0" 
+           onMouseDown={(e) => {
+             // Ensure click on canvas triggers pointer lock logic
+             if(phase === 'PLAYING' && document.pointerLockElement !== document.body) {
+               document.body.requestPointerLock();
+             }
+           }}>
         {(phase === 'PLAYING' || phase === 'DEAD') && <GameScene />}
       </div>
 
@@ -190,28 +223,41 @@ const App: React.FC = () => {
             ))}
           </div>
 
-          {/* Mobile Controls (Visible on touch devices, or always for this demo) */}
-          <div className="absolute bottom-12 left-12 pointer-events-auto md:opacity-50 hover:opacity-100 transition-opacity">
+          {/* Mobile: Left Joystick for Move */}
+          <div className="absolute bottom-12 left-12 pointer-events-auto opacity-80 hover:opacity-100 transition-opacity">
              <Joystick 
                label="移動"
                onMove={(x, y) => setJoystickMove(x, y)} 
              />
           </div>
 
-          <div className="absolute bottom-12 right-12 pointer-events-auto md:opacity-50 hover:opacity-100 transition-opacity">
-             <Joystick 
-               label="瞄準射擊"
-               onMove={(x, y) => setJoystickAim(x, y, true)} 
-               onEnd={() => {
-                 setJoystickAim(0, 0, false);
+          {/* Mobile: Touch Look Zone (Right half of screen) */}
+          <div 
+             className="absolute top-0 right-0 w-1/2 h-full pointer-events-auto z-0 touch-none"
+             onTouchStart={handleTouchLookStart}
+             onTouchMove={handleTouchLookMove}
+             onTouchEnd={handleTouchLookEnd}
+          />
+
+          {/* Mobile: Shoot Button */}
+          <div className="absolute bottom-12 right-12 pointer-events-auto z-20">
+             <button
+               className="w-24 h-24 rounded-full bg-red-600/80 border-4 border-white/30 shadow-lg active:bg-red-700 active:scale-95 transition-all flex items-center justify-center backdrop-blur-sm"
+               onTouchStart={(e) => {
+                 e.preventDefault(); // Prevent ghost clicks
                  triggerShoot();
                }}
-             />
+               onMouseDown={(e) => e.stopPropagation()} // Prevent triggering pointer lock
+             >
+                <div className="w-12 h-12 border-2 border-white rounded-full flex items-center justify-center">
+                   <div className="w-8 h-8 bg-white rounded-full" />
+                </div>
+             </button>
           </div>
           
           {/* Desktop Hint */}
-          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white/30 text-xs hidden md:block">
-            WASD 移動 • 滑鼠 瞄準/射擊
+          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white/30 text-xs hidden md:block bg-black/50 px-3 py-1 rounded-full backdrop-blur-sm">
+            WASD 移動 • 滑鼠 轉視角 • 左鍵 射擊
           </div>
         </div>
       )}
