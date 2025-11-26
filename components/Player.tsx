@@ -15,109 +15,97 @@ const Player: React.FC<PlayerProps> = ({ id, onShoot, onUpdate }) => {
   const rigidBodyRef = useRef<RapierRigidBody>(null);
   const meshRef = useRef<THREE.Group>(null);
   
-  // Use selector to get stable player state (color, etc)
+  // Use selector to get stable player state
   const playerState = useGameStore(state => state.players[id]);
   
-  // Ref to track previous shoot timestamp to detect new triggers
+  // Refs for logic
   const prevShootTimestamp = useRef(0);
+  const prevJumpTimestamp = useRef(0);
 
   const { camera } = useThree();
 
   // Temporary vectors for math
-  const moveDirection = new THREE.Vector3();
-  const cameraOffset = new THREE.Vector3();
   const cameraTarget = new THREE.Vector3();
 
   useFrame((state, delta) => {
     if (!rigidBodyRef.current || !playerState || playerState.isDead) return;
 
-    // PERFORMANCE FIX: Read inputs directly from store state
-    const { joystickMove, shootTimestamp, cameraAngle } = useGameStore.getState();
+    // PERFORMANCE: Read inputs directly from store state
+    const { joystickMove, shootTimestamp, jumpTimestamp, cameraAngle } = useGameStore.getState();
 
     // 1. Movement Logic (Relative to Camera)
-    // joystickMove.x is Left/Right, joystickMove.y is Forward/Back (Up/Down on screen)
-    
-    // Create a vector based on joystick input
-    // In 3D space: x is right, z is forward/back. 
-    // We invert Y from joystick because usually Up(-1) is Forward(-z)
-    const inputVector = new THREE.Vector3(joystickMove.x, 0, -joystickMove.y);
-
-    // Apply camera rotation to the input vector so "Up" moves away from camera
-    inputVector.applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraAngle);
-
     const currentVel = rigidBodyRef.current.linvel();
+    
+    // Calculate movement vector based on Camera Angle
+    // joystickMove.x (Right/Left)
+    // joystickMove.y (Forward/Back - Note: Joystick Y is usually +Up, so we use it as -Z for forward)
+    const inputVector = new THREE.Vector3(joystickMove.x, 0, -joystickMove.y);
+    
+    // Rotate input vector by camera angle so "Up" on stick moves "Away" from camera
+    inputVector.applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraAngle);
 
     if (inputVector.length() > 0.1) {
       inputVector.normalize().multiplyScalar(PLAYER_SPEED);
+      // Preserve vertical velocity (gravity/jump)
       rigidBodyRef.current.setLinvel({ x: inputVector.x, y: currentVel.y, z: inputVector.z }, true);
       
       // Rotate character to face movement direction smoothly
       const targetRotation = Math.atan2(inputVector.x, inputVector.z);
-      
-      // Smooth rotation (optional, but looks better)
       const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), targetRotation);
       rigidBodyRef.current.setRotation(q, true);
     } else {
-      // Damping
+      // Damping (stop horizontally but keep vertical)
       rigidBodyRef.current.setLinvel({ x: currentVel.x * 0.9, y: currentVel.y, z: currentVel.z * 0.9 }, true);
-      // Keep previous rotation when stopping
     }
 
-    // 2. Sync Rotation State for Network
-    // We want the network to know the character's facing direction
-    // If moving, it's movement dir. If shooting (and not moving), we might want to face camera dir?
-    // For now, let's assume character faces movement, or if stopped, keeps facing.
+    // 2. Jumping Logic
+    if (jumpTimestamp > prevJumpTimestamp.current) {
+        prevJumpTimestamp.current = jumpTimestamp;
+        // Simple ground check: if vertical velocity is near zero
+        if (Math.abs(currentVel.y) < 0.1) {
+            rigidBodyRef.current.applyImpulse({ x: 0, y: 5, z: 0 }, true);
+        }
+    }
+
+    // 3. Sync Rotation State for Network
     const rotationQ = rigidBodyRef.current.rotation();
     const euler = new THREE.Euler().setFromQuaternion(new THREE.Quaternion(rotationQ.x, rotationQ.y, rotationQ.z, rotationQ.w));
     
-    // 3. Shooting Logic
+    // 4. Shooting Logic
     if (shootTimestamp > prevShootTimestamp.current) {
         prevShootTimestamp.current = shootTimestamp;
         
-        // Calculate spawn position
         const pos = rigidBodyRef.current.translation();
         const spawnPos = new THREE.Vector3(pos.x, pos.y + 1, pos.z);
         
-        // Shooting direction:
-        // If moving, shoot forward. 
-        // If standing still, shoot in direction of camera? Or character forward?
-        // Let's shoot in the direction of the Character's current facing.
-        const charRotation = euler.y;
+        // Shoot in direction character is facing
+        let shootAngle = euler.y;
         
-        // However, usually in TPS, you shoot where the camera is looking if you use crosshair.
-        // But this is top-down-ish. Let's shoot where the character is facing.
-        // Better UX: If standing still, snap character to face camera direction then shoot?
-        // Let's use simple character forward for now.
+        // If standing still, snap shoot direction to camera forward? 
+        // For better UX, let's keep it based on character facing for now, 
+        // assuming user rotates char by moving.
         
-        // Improvement: If input is zero, use Camera Angle as shoot direction
-        let shootAngle = charRotation;
-        if (inputVector.length() < 0.1) {
-            shootAngle = cameraAngle + Math.PI; // Camera is behind, so angle is consistent?
-            // Actually cameraAngle 0 means camera is at +Z looking at 0,0 (South to North)
-            // Let's just use the character's last rotation for stability.
-        }
-
         const forward = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), shootAngle);
         spawnPos.add(forward.clone().multiplyScalar(1.2));
         
         onShoot(spawnPos, forward);
     }
 
-    // 4. Network Sync
+    // 5. Network Sync
     const pos = rigidBodyRef.current.translation();
     onUpdate(new THREE.Vector3(pos.x, pos.y, pos.z), euler.y);
 
-    // 5. Camera Orbit Logic
-    // Camera position is calculated based on player position + offset rotated by cameraAngle
-    const dist = 30; // Distance from player
-    const height = 25; // Height above player
+    // 6. Camera Orbit Logic (Revised for better feel)
+    // Reduced distance and height for a closer, more "Action" feel.
+    const dist = 14; 
+    const height = 10; 
     
     // Calculate offset based on angle
-    // angle 0: Camera at +z (looking -z)
     const offsetX = Math.sin(cameraAngle) * dist;
     const offsetZ = Math.cos(cameraAngle) * dist;
 
-    cameraTarget.set(pos.x, pos.y + 2, pos.z); // Look slightly above player center
+    // Look slightly above player center
+    cameraTarget.set(pos.x, pos.y + 1.5, pos.z); 
     
     const desiredCamPos = new THREE.Vector3(
         pos.x + offsetX,
@@ -126,7 +114,7 @@ const Player: React.FC<PlayerProps> = ({ id, onShoot, onUpdate }) => {
     );
 
     // Smooth camera follow
-    state.camera.position.lerp(desiredCamPos, 0.2); // Faster lerp for responsive rotation
+    state.camera.position.lerp(desiredCamPos, 0.15);
     state.camera.lookAt(cameraTarget);
   });
 

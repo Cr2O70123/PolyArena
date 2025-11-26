@@ -8,8 +8,8 @@ import { PlayerState } from './types';
 const App: React.FC = () => {
   const { 
     phase, nickname, setNickname, setPhase, setMyId, updatePlayer,
-    setJoystickMove, setCameraAngle, triggerShoot, 
-    resetGame, players, myId, cameraAngle
+    setJoystickMove, setCameraAngle, triggerShoot, triggerJump,
+    resetGame, players, myId
   } = useGameStore();
   
   const [localName, setLocalName] = useState('');
@@ -17,7 +17,7 @@ const App: React.FC = () => {
 
   // Desktop Controls (Keyboard + Mouse Look)
   useEffect(() => {
-    const keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false };
+    const keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false, " ": false };
     
     const updateMove = () => {
       let x = 0;
@@ -37,6 +37,9 @@ const App: React.FC = () => {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === " ") {
+        triggerJump();
+      }
       if (Object.prototype.hasOwnProperty.call(keys, e.key)) {
         (keys as any)[e.key] = true;
         updateMove();
@@ -181,7 +184,7 @@ const App: React.FC = () => {
             </div>
             
             <p className="mt-4 text-xs text-center text-gray-500">
-              支援: 手機觸控 / 電腦鍵盤 WASD + 滑鼠
+              支援: 手機觸控 / 電腦鍵盤 WASD + 空白鍵跳躍 + 滑鼠
             </p>
           </div>
         </div>
@@ -239,15 +242,29 @@ const App: React.FC = () => {
              onTouchEnd={handleTouchLookEnd}
           />
 
-          {/* Mobile: Shoot Button */}
-          <div className="absolute bottom-12 right-12 pointer-events-auto z-20">
+          {/* Mobile Actions Container */}
+          <div className="absolute bottom-12 right-12 pointer-events-auto z-20 flex flex-col gap-4">
+            
+            {/* Jump Button (Mobile) */}
+             <button
+               className="w-16 h-16 rounded-full bg-blue-600/80 border-2 border-white/30 shadow-lg active:bg-blue-700 active:scale-95 transition-all flex items-center justify-center backdrop-blur-sm mb-2"
+               onTouchStart={(e) => {
+                 e.preventDefault();
+                 triggerJump();
+               }}
+               onMouseDown={(e) => e.stopPropagation()} 
+             >
+                <div className="font-bold text-xs uppercase tracking-wider">Jump</div>
+             </button>
+
+             {/* Shoot Button (Mobile) */}
              <button
                className="w-24 h-24 rounded-full bg-red-600/80 border-4 border-white/30 shadow-lg active:bg-red-700 active:scale-95 transition-all flex items-center justify-center backdrop-blur-sm"
                onTouchStart={(e) => {
-                 e.preventDefault(); // Prevent ghost clicks
+                 e.preventDefault();
                  triggerShoot();
                }}
-               onMouseDown={(e) => e.stopPropagation()} // Prevent triggering pointer lock
+               onMouseDown={(e) => e.stopPropagation()} 
              >
                 <div className="w-12 h-12 border-2 border-white rounded-full flex items-center justify-center">
                    <div className="w-8 h-8 bg-white rounded-full" />
@@ -257,7 +274,7 @@ const App: React.FC = () => {
           
           {/* Desktop Hint */}
           <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white/30 text-xs hidden md:block bg-black/50 px-3 py-1 rounded-full backdrop-blur-sm">
-            WASD 移動 • 滑鼠 轉視角 • 左鍵 射擊
+            WASD 移動 • 空白鍵 跳躍 • 滑鼠 轉視角 • 左鍵 射擊
           </div>
         </div>
       )}

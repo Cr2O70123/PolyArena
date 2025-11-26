@@ -17,6 +17,7 @@ interface GameStore {
   
   // Actions to bridge UI and 3D
   shootTimestamp: number;
+  jumpTimestamp: number; // New: Jump trigger
 
   // Actions
   setPhase: (phase: GamePhase) => void;
@@ -25,8 +26,9 @@ interface GameStore {
   updatePlayer: (id: string, data: Partial<PlayerState>) => void;
   removePlayer: (id: string) => void;
   setJoystickMove: (x: number, y: number) => void;
-  setCameraAngle: (angle: number) => void; // New action
+  setCameraAngle: (angle: number) => void;
   triggerShoot: () => void;
+  triggerJump: () => void; // New action
   resetGame: () => void;
 }
 
@@ -38,6 +40,7 @@ export const useGameStore = create<GameStore>((set) => ({
   joystickMove: { x: 0, y: 0 },
   cameraAngle: 0,
   shootTimestamp: 0,
+  jumpTimestamp: 0,
 
   setPhase: (phase) => set({ phase }),
   setNickname: (nickname) => set({ nickname }),
@@ -81,6 +84,7 @@ export const useGameStore = create<GameStore>((set) => ({
   setJoystickMove: (x, y) => set({ joystickMove: { x, y } }),
   setCameraAngle: (angle) => set({ cameraAngle: angle }),
   triggerShoot: () => set({ shootTimestamp: Date.now() }),
+  triggerJump: () => set({ jumpTimestamp: Date.now() }),
 
   resetGame: () => set((state) => ({
     players: {},
