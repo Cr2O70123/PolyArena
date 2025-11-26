@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Physics, RigidBody, CuboidCollider } from '@react-three/rapier';
 import { SoftShadows, Environment } from '@react-three/drei';
 import * as THREE from 'three';
-import usePartySocket from 'partykit/react';
+import PartySocket from 'partysocket';
 
 import { useGameStore } from '../store';
 import { MAP_SIZE, COLORS, OBSTACLES, WS_URL } from '../constants';
@@ -57,21 +57,27 @@ const GameSceneContent: React.FC = () => {
   } = useGameStore();
 
   const [bullets, setBullets] = useState<any[]>([]);
+  const socketRef = useRef<PartySocket | null>(null);
 
-  // WebSocket Connection
-  const socket = usePartySocket({
-    host: WS_URL,
-    room: "polyarena-main",
-    onOpen: () => {
-       if (myId) {
-          socket.send(JSON.stringify({
-            type: 'join',
-            id: myId,
-            nickname: useGameStore.getState().nickname
-          }));
-       }
-    },
-    onMessage: (evt) => {
+  // WebSocket Connection Management
+  useEffect(() => {
+    const ws = new PartySocket({
+      host: WS_URL,
+      room: "polyarena-main"
+    });
+
+    ws.addEventListener('open', () => {
+      const currentMyId = useGameStore.getState().myId;
+      if (currentMyId) {
+        ws.send(JSON.stringify({
+          type: 'join',
+          id: currentMyId,
+          nickname: useGameStore.getState().nickname
+        }));
+      }
+    });
+
+    ws.addEventListener('message', (evt) => {
       const msg = JSON.parse(evt.data);
       switch (msg.type) {
         case 'sync':
@@ -89,18 +95,23 @@ const GameSceneContent: React.FC = () => {
           setBullets(prev => [...prev, { ...msg, id: bulletId, timestamp: Date.now() }]);
           break;
         case 'hit':
-            // Logic usually handled by store state updates (HP) via sync
-            // Can add particle effects here later
+            // Hit logic handled via state sync
             break;
       }
-    }
-  });
+    });
+
+    socketRef.current = ws;
+
+    return () => {
+      ws.close();
+    };
+  }, []);
 
   // Handle local player updates sending to server
   const handleLocalUpdate = (position: THREE.Vector3, rotation: number) => {
+    const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN || !myId) return;
     
-    // Simple throttling could be added here if needed
     socket.send(JSON.stringify({
       type: 'update',
       id: myId,
@@ -114,6 +125,7 @@ const GameSceneContent: React.FC = () => {
     const bulletId = `${myId}-${Date.now()}`;
     setBullets(prev => [...prev, { id: bulletId, ownerId: myId, position, direction, timestamp: Date.now() }]);
 
+    const socket = socketRef.current;
     if (!socket || !myId) return;
     socket.send(JSON.stringify({
       type: 'shoot',
@@ -160,9 +172,8 @@ const GameSceneContent: React.FC = () => {
              key={b.id} 
              data={b} 
              onHit={(bid, targetId) => {
-                // Client-side hit prediction or authoritative? 
-                // For this demo: Owner authoritative
                 if (b.ownerId === myId && targetId && targetId !== myId) {
+                   const socket = socketRef.current;
                    if (socket && socket.readyState === WebSocket.OPEN) {
                        socket.send(JSON.stringify({
                           type: 'hit',
