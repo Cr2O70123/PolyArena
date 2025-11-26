@@ -17,7 +17,7 @@
     "@dimforge/rapier3d-compat": "0.11.2",
     "uuid": "9.0.1",
     "zustand": "4.5.0",
-    "partysocket": "0.0.105",
+    "partysocket": "1.0.3",
     "maath": "0.10.7",
     "camera-controls": "2.8.3",
     "suspend-react": "0.1.3",
